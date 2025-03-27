@@ -8,9 +8,6 @@ class AudioClient:
         self.host = host
         self.port = port
         
-        # Создаем папку для логирования, если её нет
-        os.makedirs('./logs', exist_ok=True)
-
         # Настройка логирования
         logging.basicConfig(
             filename='logs/client.log',
@@ -28,7 +25,14 @@ class AudioClient:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((self.host, self.port))
             s.sendall(b'list')
-            data = s.recv(4096)
+
+            data = b""
+            while True:
+                chunk = s.recv(4096)  # Читаем частями по 4096 байт
+                if not chunk:
+                    break
+                data += chunk
+
             return json.loads(data.decode())
 
     def request_segment(self, filename, start, end):
@@ -37,13 +41,22 @@ class AudioClient:
             s.connect((self.host, self.port))
             s.sendall(f'segment {filename} {start} {end}'.encode())
             
-            # Сохраняем полученный отрезок
+            # Сохраняем путь к полученному отрезку
             save_path = os.path.join(
                 self.download_dir,
-                f'segment_{filename}_{start}_{end}.mp3'
+                f'segment_{filename[:-4]}_{start}_{end}.mp3'
             )
+
+            data = b""
+            while True:
+                chunk = s.recv(4096)  # Читаем частями по 4096 байт
+                if not chunk:
+                    break
+                data += chunk
+
             with open(save_path, 'wb') as f:
-                f.write(s.recv(4096))
+                f.write(data)
+
             logging.info(f"Отрезок сохранен как {save_path}")
 
     def run(self):

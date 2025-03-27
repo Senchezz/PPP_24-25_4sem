@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import socket
 import threading
 import tempfile
@@ -45,21 +46,27 @@ class AudioServer:
         
         with open(self.metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
+
         logging.info("Метаданные обновлены")
 
     def send_audio_segment(self, conn, filename, start_sec, end_sec):
         """Вырезает отрезок аудио и отправляет его клиенту."""
         try:
             audio = AudioSegment.from_file(os.path.join(self.audio_dir, filename))
-            start_ms = start_sec * 1000  # Переводим в миллисекунды
-            end_ms = end_sec * 1000
+            start_ms = (start_sec * 1000) // 1  # Переводим в миллисекунды
+            end_ms = (end_sec * 1000) // 1
             segment = audio[start_ms:end_ms]
             
             # Создаем временный файл
             with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as tmp:
                 segment.export(tmp.name, format='mp3')
+                tmp.flush()
+
+                time.sleep(0.1)
+
                 with open(tmp.name, 'rb') as f:
                     conn.sendall(f.read())
+
             os.unlink(tmp.name)  # Удаляем временный файл
 
         except FileNotFoundError:
@@ -80,12 +87,14 @@ class AudioServer:
                     # Отправляем список аудиофайлов
                     with open(self.metadata_file, 'rb') as f:
                         conn.sendall(f.read())
+                    conn.close()
                     logging.info(f"Клиенту {addr} отправлен список файлов")
 
                 elif data.startswith('segment'):
                     # Обработка запроса на вырезку отрезка
                     _, filename, start, end = data.split()
                     self.send_audio_segment(conn, filename, float(start), float(end))
+                    conn.close()
                     logging.info(f"Клиенту {addr} отправлен отрезок из {filename}")
 
         except Exception as e:
