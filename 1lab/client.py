@@ -39,25 +39,29 @@ class AudioClient:
         """Запрашивает отрезок аудио и сохраняет его локально."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((self.host, self.port))
-            s.sendall(f'segment {filename} {start} {end}'.encode())
+            s.sendall(f'segment<sep>{filename}<sep>{start}<sep>{end}'.encode())
             
             # Сохраняем путь к полученному отрезку
             save_path = os.path.join(
                 self.download_dir,
-                f'segment_{filename[:-4]}_{start}_{end}.mp3'
+                f"segment_{filename.split('.')[0].replace(' ', '_')}_{start}_{end}.mp3"
             )
 
             data = b""
             while True:
-                chunk = s.recv(4096)  # Читаем частями по 4096 байт
+                chunk = s.recv(4096)
                 if not chunk:
                     break
                 data += chunk
 
-            with open(save_path, 'wb') as f:
-                f.write(data)
-
-            logging.info(f"Отрезок сохранен как {save_path}")
+            if data == b'File not found':
+                print("Файл с таким именем не найден на сервере :(")
+                logging.info(f"Пользователь запросил несуществующий файл - {save_path}")
+            else:
+                with open(save_path, 'wb') as f:
+                        f.write(data)
+                        print("Отрезок успешно сохранен!")
+                        logging.info(f"Отрезок сохранен как {save_path}")
 
     def run(self):
         """Интерактивный режим работы клиента."""
@@ -82,7 +86,6 @@ class AudioClient:
                 end = input("Конец отрезка (сек): ").strip()
                 try:
                     self.request_segment(filename, float(start), float(end))
-                    print("Отрезок успешно сохранен!")
                 except ValueError:
                     print("Ошибка: введите числовые значения для времени!")
                 except Exception as e:

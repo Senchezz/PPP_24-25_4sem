@@ -1,6 +1,5 @@
 import os
 import json
-import time
 import socket
 import threading
 import tempfile
@@ -52,25 +51,31 @@ class AudioServer:
     def send_audio_segment(self, conn, filename, start_sec, end_sec):
         """Вырезает отрезок аудио и отправляет его клиенту."""
         try:
+            if not os.path.exists(os.path.join(self.audio_dir, filename)):
+                conn.sendall(b'File not found')
+                return
+            
             audio = AudioSegment.from_file(os.path.join(self.audio_dir, filename))
-            start_ms = (start_sec * 1000) // 1  # Переводим в миллисекунды
-            end_ms = (end_sec * 1000) // 1
+            start_ms = int(start_sec * 1000)  # Переводим в миллисекунды
+            end_ms = int(end_sec * 1000)
             segment = audio[start_ms:end_ms]
+
+            if start_ms < 0 or end_ms > len(audio) or start_ms >= end_ms:
+                conn.sendall(b'Invalid time range')
+                return
             
             # Создаем временный файл
             with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as tmp:
                 segment.export(tmp.name, format='mp3')
-                tmp.flush()
 
-                time.sleep(0.1)
-
-                with open(tmp.name, 'rb') as f:
-                    conn.sendall(f.read())
+                with open(tmp.name, "rb") as f:
+                    while chunk := f.read(4096):  # Отправка частями по 4 KB
+                        conn.sendall(chunk)
 
             os.unlink(tmp.name)  # Удаляем временный файл
 
-        except FileNotFoundError:
-            conn.sendall(b'File not found')
+        except ValueError:
+            conn.sendall(b'Invalid time values')
         except Exception as e:
             conn.sendall(f'Error: {str(e)}'.encode())
 
@@ -78,24 +83,21 @@ class AudioServer:
         """Обрабатывает подключение клиента."""
         logging.info(f"Подключен клиент: {addr}")
         try:
-            while True:
-                data = conn.recv(1024).decode().strip()
-                if not data:
-                    break
+            data = conn.recv(4096).decode().strip()
+            if not data:
+                return
 
-                if data == 'list':
-                    # Отправляем список аудиофайлов
-                    with open(self.metadata_file, 'rb') as f:
-                        conn.sendall(f.read())
-                    conn.close()
-                    logging.info(f"Клиенту {addr} отправлен список файлов")
+            if data == 'list':
+                # Отправляем список аудиофайлов
+                with open(self.metadata_file, 'rb') as f:
+                    conn.sendall(f.read())
+                logging.info(f"Клиенту {addr} отправлен список файлов")
 
-                elif data.startswith('segment'):
-                    # Обработка запроса на вырезку отрезка
-                    _, filename, start, end = data.split()
-                    self.send_audio_segment(conn, filename, float(start), float(end))
-                    conn.close()
-                    logging.info(f"Клиенту {addr} отправлен отрезок из {filename}")
+            elif data.startswith('segment'):
+                # Обработка запроса на вырезку отрезка
+                _, filename, start, end = data.split('<sep>')
+                self.send_audio_segment(conn, filename, float(start), float(end))
+                logging.info(f"Клиенту {addr} отправлен отрезок из {filename}")
 
         except Exception as e:
             logging.error(f"Ошибка с клиентом {addr}: {e}")
@@ -114,7 +116,7 @@ class AudioServer:
             while True:
                 conn, addr = s.accept()
                 # Каждого клиента обрабатываем в отдельном потоке
-                threading.Thread(target=self.handle_client, args=(conn, addr)).run()
+                threading.Thread(target=self.handle_client, args=(conn, addr)).start()
 
 
 if __name__ == '__main__':
