@@ -51,9 +51,9 @@ def start_encode(token: str, text: str, key: str):
 
 async def listen_to_ws(token: str):
     headers = [("Authorization", f"Bearer {token}")]
-    print("[DEBUG] Подключаемся к WebSocket с токеном:")
-    print(token)
-    print("[DEBUG] Заголовки:", headers)
+    # print("[DEBUG] Подключаемся к WebSocket с токеном:")
+    # print(token)
+    # print("[DEBUG] Заголовки:", headers)
 
     try:
         async with websockets.connect(WS_URL, extra_headers=headers) as websocket:
